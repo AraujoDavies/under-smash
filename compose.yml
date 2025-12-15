@@ -4,9 +4,24 @@ services:
     image: python:3.11.10
     restart: always
     volumes:
-      - ./:/app/
+      - ./betfair-init/:/app/betfair-init/
+      - ./api_betfair.py:/app/api_betfair.py
+      - ./helper_db.py:/app/helper_db.py
+      - ./helpers.py:/app/helpers.py
+      - ./main.py:/app/main.py
+      - ./app.db:/app/app.db
+      - ./requirements.txt:/app/requirements.txt
     environment:
       - TZ=America/Sao_Paulo
+      # betfair files path
       - CRT_DIR=/app/betfair-init/client-2048.crt
       - KEY_DIR=/app/betfair-init/client-2048.key
+      # to auth... (remember to use a .env file)
+      - BETFAIR_USER=${BETFAIR_USER}
+      - BETFAIR_PASSWORD=${BETFAIR_PASSWORD}
+      # app key valid to all accounts
+      - APP_KEY=gBMF1zhAoNgJIbxw
+      # set your db conn or use default
+      - DATABASE_URI=sqlite:///app.db
+    
     command: bash -c "cd app && pip install -r /app/requirements.txt && python /app/main.py"
