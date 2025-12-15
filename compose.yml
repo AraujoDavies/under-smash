@@ -7,6 +7,7 @@ services:
       - ./code/:/app/code/
       - ./betfair-init/:/app/betfair-init/ 
       - ./requirements.txt:/app/requirements.txt
+      - ./app.db:/app/app.db
     environment:
       - TZ=America/Sao_Paulo
       # betfair files path
