@@ -1,0 +1,12 @@
+services:
+  under-smash:
+    container_name: under-smash
+    image: python:3.11.10
+    restart: always
+    volumes:
+      - ./:/app/
+    environment:
+      - TZ=America/Sao_Paulo
+      - CRT_DIR=/app/betfair-init/client-2048.crt
+      - KEY_DIR=/app/betfair-init/client-2048.key
+    command: bash -c "cd app && pip install -r /app/requirements.txt && python /app/main.py"
