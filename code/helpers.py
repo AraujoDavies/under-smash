@@ -130,6 +130,4 @@ def get_market_book(market_id: str) -> dict:
 
     market_book = callAping(rpc)
 
-    market_book = json.loads(market_book)
-
     return market_book

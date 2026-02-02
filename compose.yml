@@ -5,9 +5,10 @@ services:
     restart: always
     volumes:
       - ./code/:/app/code/
+      - ./logs/:/app/logs/
       - ./betfair-init/:/app/betfair-init/ 
       - ./requirements.txt:/app/requirements.txt
-      - ./app.db:/app/app.db
+      - ./app_v2.db:/app/app_v2.db
     environment:
       - TZ=America/Sao_Paulo
       # betfair files path
@@ -19,6 +20,7 @@ services:
       # app key valid to all accounts
       - APP_KEY=gBMF1zhAoNgJIbxw
       # set your db conn or use default
-      - DATABASE_URI=sqlite:///app.db
+      - DATABASE_URI=sqlite:///app_v2.db
+      - STAKE_LUCRO=1
     
     command: bash -c "cd app && pip install -r /app/requirements.txt && python /app/code/main.py"

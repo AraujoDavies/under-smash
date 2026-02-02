@@ -4,3 +4,6 @@ __pycache__
 *.key
 *.pem
 *.ipynb
+.vscode
+*.sqlite3-query
+*.log

@@ -1,22 +1,23 @@
-from api_betfair import callAping
+from api_betfair import callAping, place_order
 import logging
 from datetime import datetime, timedelta, timezone
-import json
 import pandas as pd
 
-
-from helper_db import engine, TblUnderSmash, session, StatusEnum
+from helper_db import engine, TblUnderSmash, session
 from sqlalchemy import select
 from helpers import *
-import platform
 
 from dotenv import load_dotenv
 load_dotenv()
 
+LUCRO = os.getenv("STAKE_LUCRO")
+JA_FEZ_CASHOUT = []
 ignorar_events = [] # add o id dos eventos que sairam do padrão
 
+log_file = datetime.now().strftime("./logs/under-smash-%d-%m-%Y.log")
+print('LOG FILE: ', log_file)
 logging.basicConfig(
-    # filename=
+    filename=log_file,
     level=logging.INFO,
     encoding='utf-8',
     format='%(asctime)s - %(levelname)s: %(message)s'
@@ -47,8 +48,6 @@ def analisa_jogos_em_andamento():
     """.replace('dia_from', dia_from).replace('dia_to', dia_to)
 
     list_events = callAping(rpc)
-
-    list_events = json.loads(list_events)
 
     jogos_do_dia = []
     for jogo in list_events['result']:
@@ -124,8 +123,6 @@ def analisa_jogos_em_andamento():
 
         market_catalogue = callAping(rpc)
 
-        market_catalogue = json.loads(market_catalogue)
-
         if market_catalogue['result'] == []: continue
 
         df_catalogue = pd.DataFrame(market_catalogue['result'])
@@ -150,6 +147,7 @@ def analisa_jogos_em_andamento():
             df.loc[index, "lay_under"] = runners["availableToLay"][0]["price"]
             df.loc[index, "odd_max_saida"] = runners["availableToBack"][0]["price"]
             df.loc[index, "total_correspondido"] = market_book['result'][0]['totalMatched']
+            df.loc[index, "selection_id"] = str(market_book['result'][0]['runners'][1]['selectionId'])
         except:
             ...
 
@@ -181,7 +179,7 @@ def analisa_jogos_em_andamento():
 
 # Atualizar eventos que estão no banco
 def atualizar_eventos_em_andamento():
-    stmt = select(TblUnderSmash).where(TblUnderSmash.status == StatusEnum.IN_PLAY)
+    stmt = select(TblUnderSmash).where(TblUnderSmash.status == 'IN_PLAY')
     matchs_inplay = session.execute(stmt).scalars().all()
     if len(matchs_inplay) > 0:
         logging.info('Eventos em andamento (INPLAY): %s', len(matchs_inplay))
@@ -203,16 +201,203 @@ def atualizar_eventos_em_andamento():
                 row.odd_max_saida = 1000
                 row.dt_last_update_odd = datetime.now()
                 row.dt_market_closed = datetime.now()
-                row.status = StatusEnum.FINISH
+                row.status = "FINISH"
             if status_over == "WINNER": # significa que saiu um gol ai nao posso atualizar mais a odd.
                 row.dt_market_closed = datetime.now()
-                row.status = StatusEnum.FINISH
+                row.status = "FINISH"
 
         if status_market == "CLOSED":
             row.dt_market_closed = datetime.now()
-            row.status = StatusEnum.FINISH
+            row.status = "FINISH"
         
     session.commit()
+
+
+def monitorar_entrada():
+    """
+        faz a entrada e monitora se foi correspondido e quando deve fechar a posição
+    """
+    stmt = select(TblUnderSmash).where(TblUnderSmash.betfair_response_entrada==None, TblUnderSmash.status=="IN_PLAY")
+    matchs_in_play = session.execute(stmt).scalars().all()
+    
+    # faça entradas pendentes...
+    for m in matchs_in_play:
+        logging.info("Fazendo entrada: %s", m)
+        market_id = m.market_id
+        selection_id = m.selection_id
+        odd = round(m.lay_under - 0.01, 2) # a odd do banco é a do lay, por isso subtrai 0.01 tick
+        # STAKE = RESP / odd -1
+        stake = str(int(int(LUCRO) / (odd -1))) + '.00' # faz-se o cálculo pq vamos entrar pra lucrar isso na realidade
+        stake = '1.00' # HACK
+
+        order_response = str(place_order(
+            market_id=market_id, selection_id=selection_id, stake=stake, side="BACK", odd=str(odd)
+        ))
+        if '<status>SUCCESS</status>' in order_response:
+            m.betfair_response_entrada = order_response
+            m.dt_entrada = datetime.now()
+            m.stake = stake
+
+        logging.info('%s Status da aposta(order): %s', m, order_response)
+
+    session.commit()
+
+    # monitore entradas em andamento para fechar
+    stmt = select(TblUnderSmash).where(TblUnderSmash.betfair_response_entrada!=None, TblUnderSmash.status=="IN_PLAY")
+    matchs_in_play = session.execute(stmt).scalars().all()
+
+    for match_db in matchs_in_play:
+        cashout_ocorreu = False
+        if match_db in JA_FEZ_CASHOUT:
+            logging.info("%s ja fez cash - IGNORANDO MONITORAMENTO", match_db)
+            continue
+
+        logging.info("Monitorando: %s", match_db)
+        if match_db.odd_max_saida > match_db.lay_under:
+            logging.info('Está na hora de fazer cashout')
+        else:
+            continue
+
+        market_book = get_market_book(str(match_db.market_id))
+        if market_book['result'][0]['status'] == 'CLOSED': continue
+        try:
+            runners = market_book["result"][0]["runners"][1]["ex"]
+            odd_lay = runners["availableToLay"][0]["price"] 
+            odd_back = runners["availableToBack"][0]["price"]
+            peso_dinheiro_back = runners["availableToLay"][0]["size"] # pela ladder vc vê q é o inverso mesmo
+            peso_dinheiro_lay = runners["availableToBack"][0]["size"] # pela ladder vc vê q é o inverso mesmo
+            gap = odd_lay - odd_back
+        except:
+            logging.error("%s runners error!", match_db)
+            continue
+
+        # coleta odd de entrada
+        odd_entrada_back = match_db.betfair_response_entrada.split('price')[1]
+        for caracter in ['>', '<', '/']:
+            odd_entrada_back = odd_entrada_back.replace(caracter, '')
+        odd_entrada_back = float(odd_entrada_back)
+
+        odd_ref = match_db.lay_under + 0.01
+        if odd_lay > odd_ref : # só fecha e já era
+            logging.info('CASHOUT Forçado!')
+            saida = saida_cashout(match_db=match_db, mercado_saida="LAY", odd_back=odd_entrada_back, odd_lay=round(odd_lay + 0.01, 2))
+            logging.info("CASHOUT STATUS: %s", saida[1])
+            if saida[0]:
+                match_db.betfair_response_saida = saida[1] if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
+            cashout_ocorreu = True if 'CASHOUT JÁ OCORREU' in saida[1] else False
+                
+
+        if odd_lay == odd_ref: # fecha se gap de 1 tick e peso do dinheiro do lay for 2.5 vezes maior q do back
+            if round(gap,2) <= 0.01 and peso_dinheiro_lay > peso_dinheiro_back * 2.5:
+                logging.info('CASHOUT na odd desejada: %s', odd_ref)
+                saida = saida_cashout(match_db=match_db, mercado_saida="LAY", odd_back=odd_entrada_back, odd_lay=odd_lay)
+                logging.info("CASHOUT STATUS: %s", saida[1])
+                if saida[0]:
+                    match_db.betfair_response_saida = saida[1] if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
+                cashout_ocorreu = True if 'CASHOUT JÁ OCORREU' in saida[1] else False
+
+        if cashout_ocorreu:
+            JA_FEZ_CASHOUT.append(match_db)
+
+    session.commit()
+
+
+def saida_cashout(match_db: TblUnderSmash, mercado_saida: str, odd_back: float, odd_lay: float) -> tuple:
+    """Faz saída em cashout
+    
+    Args:
+
+        market_id (_str_): id do mercado para cash
+        mercado_saida (_str_): Qual mercado será usado para fechar LAY ou BACK
+        odd_back (_float_): odd que entrou ou q vai sair em back
+        odd_lay (_float_): odd que entrou ou q vai sair em lay
+    
+    Returns:
+
+        status (_tuple_): contendo resultado da operacao + mensagem de erro ou placebet response
+
+    Example:
+
+        >>> saida_cashout()
+        (True, "<xml>...")
+
+    """
+    payload = """{
+        "jsonrpc": "2.0",
+        "method": "SportsAPING/v1.0/listMarketProfitAndLoss",
+        "params": {
+            "marketIds": ["market_id"],
+            "includeSettledBets": true,
+            "includeBspBets": true,
+            "netOfCommission": true
+        },
+        "id": 1
+    }""".replace('market_id', match_db.market_id)
+    o = callAping(jsonrpc_req=payload)
+    df = pd.DataFrame(o['result'][0]['profitAndLosses'])
+    if float(df['ifWin'].min()) > 0: # green
+        return (False, 'CASHOUT JÁ OCORREU: Mercado encontra-se em green')
+    if float(df['ifWin'].min()) < 0 and float(df['ifWin'].max()) < 0: # red
+        return (False, 'CASHOUT JÁ OCORREU: Mercado encontra-se em red')
+    if float(df['ifWin'].min()) < 0 and float(df['ifWin'].max()) > 0: # está dentro       
+        if mercado_saida == 'LAY': # stake lay = odd back x stake back / odd lay
+            stake = float(df['ifWin'].min()) * -1
+            stake_lay = odd_back * stake / odd_lay # stake da saida em lay
+            stake_lay = round(stake_lay, 2)
+            logging.info('size: %s', stake_lay)
+            place_order_resp = place_order(market_id=match_db.market_id, selection_id=match_db.selection_id, stake=str(stake_lay), side="LAY", odd=str(odd_lay))
+            if 'MARKET_SUSPENDED' in place_order_resp:
+                return (False, "Mercado suspenso!")
+            if 'INVALID_ODDS' in place_order_resp:
+                return (False, f"ODD Inválida! @{odd_lay}")
+            return (True, place_order_resp)
+        elif mercado_saida == 'BACK':
+            return (False, "código para saida em BACK ainda não foi desenvolvivdo")
+        else:
+            return (False, "mercado_saida deve ser 'BACK' ou 'LAY'")
+
+
+def atualizar_pl():
+    filter_data = datetime.now() - timedelta(days=2)
+    stmt = select(TblUnderSmash).where(TblUnderSmash.status == "FINISH", TblUnderSmash.profit == 0, TblUnderSmash.dt_entrada > filter_data)
+
+    att_pl = session.execute(stmt).scalars().all()
+
+    for match_db in att_pl:
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "SportsAPING/v1.0/listClearedOrders",
+            "params": {
+                "marketIds": [match_db.market_id],
+                "betStatus": "SETTLED",
+                "recordCount": 15
+            },
+            "id": 1
+        }
+
+        payload = str(payload).replace("'", '"')
+
+        try:
+            cleared_orders = callAping(jsonrpc_req=payload)
+        except:
+            continue
+
+        try:
+            df = pd.DataFrame(cleared_orders['result']['clearedOrders'])
+            if df.empty: 
+                continue
+        except:
+            logging.error('market_id cleared_orders: %s', match_db.market_id)
+            continue
+
+        pl_float = float(df['profit'].sum())
+        if pl_float < 0:
+            pl = round(pl_float, 2)
+        else: # tira comissão
+            pl = round(pl_float * 0.935, 2)
+
+        match_db.profit = pl
+        session.commit()
 
 import schedule
 import time
@@ -220,6 +405,9 @@ import time
 analisa_jogos_em_andamento()
 schedule.every(7).minutes.do(analisa_jogos_em_andamento)
 schedule.every(30).seconds.do(atualizar_eventos_em_andamento)
+schedule.every().second.do(monitorar_entrada)
+
+schedule.every(10).minutes.do(atualizar_pl)
 
 while True:
     schedule.run_pending()

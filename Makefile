@@ -1,5 +1,11 @@
+dev:
+	poetry run ipython -i code/main.py
+
 run:
-	poetry run python main.py
+	poetry run python code/main.py
+
+db:
+	poetry run python code/helper_db.py
 
 .PHONY: down
 down:
@@ -9,6 +15,7 @@ up:
 	@make down
 	docker compose up -d
 
+.PHONY: logs
 logs:
 	docker compose logs --follow
 
