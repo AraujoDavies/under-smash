@@ -217,7 +217,7 @@ def monitorar_entrada():
     """
         faz a entrada e monitora se foi correspondido e quando deve fechar a posição
     """
-    stmt = select(TblUnderSmash).where(TblUnderSmash.betfair_response_entrada==None, TblUnderSmash.status=="IN_PLAY")
+    stmt = select(TblUnderSmash).where(TblUnderSmash.betfair_response_entrada==None, TblUnderSmash.status=="IN_PLAY", TblUnderSmash.total_correspondido>=10000)
     matchs_in_play = session.execute(stmt).scalars().all()
     
     # faça entradas pendentes...
@@ -249,12 +249,12 @@ def monitorar_entrada():
     for match_db in matchs_in_play:
         cashout_ocorreu = False
         if match_db in JA_FEZ_CASHOUT:
-            logging.info("%s ja fez cash - IGNORANDO MONITORAMENTO", match_db)
+            # logging.info("%s ja fez cash - IGNORANDO MONITORAMENTO", match_db)
             continue
 
-        logging.info("Monitorando: %s", match_db)
+        # logging.info("Monitorando: %s", match_db)
         if match_db.odd_max_saida > match_db.lay_under:
-            logging.info('Está na hora de fazer cashout')
+            logging.info('%s: Está na hora de fazer cashout', match_db)
         else:
             continue
 
@@ -279,21 +279,21 @@ def monitorar_entrada():
 
         odd_ref = match_db.lay_under + 0.01
         if odd_lay > odd_ref : # só fecha e já era
-            logging.info('CASHOUT Forçado!')
+            logging.info('%s: CASHOUT Forçado!', match_db)
             saida = saida_cashout(match_db=match_db, mercado_saida="LAY", odd_back=odd_entrada_back, odd_lay=round(odd_lay + 0.01, 2))
             logging.info("CASHOUT STATUS: %s", saida[1])
-            if saida[0]:
-                match_db.betfair_response_saida = saida[1] if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
+            if saida[0]: # TRUE/FALSE
+                match_db.betfair_response_saida = f'CASH FORÇADO: {saida[1]}' if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
             cashout_ocorreu = True if 'CASHOUT JÁ OCORREU' in saida[1] else False
                 
 
         if odd_lay == odd_ref: # fecha se gap de 1 tick e peso do dinheiro do lay for 2.5 vezes maior q do back
             if round(gap,2) <= 0.01 and peso_dinheiro_lay > peso_dinheiro_back * 2.5:
-                logging.info('CASHOUT na odd desejada: %s', odd_ref)
+                logging.info('%s: CASHOUT na odd desejada: %s', match_db, odd_ref)
                 saida = saida_cashout(match_db=match_db, mercado_saida="LAY", odd_back=odd_entrada_back, odd_lay=odd_lay)
                 logging.info("CASHOUT STATUS: %s", saida[1])
                 if saida[0]:
-                    match_db.betfair_response_saida = saida[1] if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
+                    match_db.betfair_response_saida = f'CASH DESEJADO: {saida[1]}' if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
                 cashout_ocorreu = True if 'CASHOUT JÁ OCORREU' in saida[1] else False
 
         if cashout_ocorreu:
