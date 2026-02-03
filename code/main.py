@@ -1,3 +1,6 @@
+import schedule
+import time
+
 from api_betfair import callAping, place_order
 import logging
 from datetime import datetime, timedelta, timezone
@@ -6,6 +9,7 @@ import pandas as pd
 from helper_db import engine, TblUnderSmash, session
 from sqlalchemy import select
 from helpers import *
+from helper_telegram import enviar_no_telegram
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -237,6 +241,9 @@ def monitorar_entrada():
             m.betfair_response_entrada = order_response
             m.dt_entrada = datetime.now()
             m.stake = stake
+            # telegram
+            MSG = f'**Garhwal FC v Indian Air Force** ⚽️⏰ R$ {stake}'
+            telegram_id = enviar_no_telegram(chat_id=os.getenv('TELEGRAM_CHAT_ID'), msg=MSG)
 
         logging.info('%s Status da aposta(order): %s', m, order_response)
 
@@ -399,10 +406,14 @@ def atualizar_pl():
         match_db.profit = pl
         session.commit()
 
-import schedule
-import time
+        # telegram
+        if pl > 0:
+            MSG = f'**Garhwal FC v Indian Air Force** 💰🤑 R$ {pl}'
+        else:
+            MSG = f'**Garhwal FC v Indian Air Force** 😐❌ -R$ {pl}'
+        telegram_id = enviar_no_telegram(chat_id=os.getenv('TELEGRAM_CHAT_ID'), msg=MSG)
 
-analisa_jogos_em_andamento()
+# analisa_jogos_em_andamento()
 schedule.every(7).minutes.do(analisa_jogos_em_andamento)
 schedule.every(30).seconds.do(atualizar_eventos_em_andamento)
 schedule.every().second.do(monitorar_entrada)

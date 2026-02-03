@@ -22,5 +22,9 @@ services:
       # set your db conn or use default
       - DATABASE_URI=sqlite:///app_v2.db
       - STAKE_LUCRO=1
+
+      # set telegram envs
+      - TELEGRAM_CLIENT=${TELEGRAM_CLIENT}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
     
     command: bash -c "cd app && pip install -r /app/requirements.txt && python /app/code/main.py"
