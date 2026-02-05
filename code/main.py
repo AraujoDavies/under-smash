@@ -290,7 +290,7 @@ def monitorar_entrada():
             saida = saida_cashout(match_db=match_db, mercado_saida="LAY", odd_back=odd_entrada_back, odd_lay=round(odd_lay + 0.01, 2))
             logging.info("CASHOUT STATUS: %s", saida[1])
             if saida[0]: # TRUE/FALSE
-                match_db.betfair_response_saida = f'CASH FORÇADO: {saida[1]}' if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
+                match_db.betfair_response_saida = f'{saida[1]}<cash>CASH Forçado</cash>' if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
             cashout_ocorreu = True if 'CASHOUT JÁ OCORREU' in saida[1] else False
                 
 
@@ -300,7 +300,7 @@ def monitorar_entrada():
                 saida = saida_cashout(match_db=match_db, mercado_saida="LAY", odd_back=odd_entrada_back, odd_lay=odd_lay)
                 logging.info("CASHOUT STATUS: %s", saida[1])
                 if saida[0]:
-                    match_db.betfair_response_saida = f'CASH DESEJADO: {saida[1]}' if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
+                    match_db.betfair_response_saida = f'{saida[1]}<cash>CASH ODD DESEJADA</cash>' if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
                 cashout_ocorreu = True if 'CASHOUT JÁ OCORREU' in saida[1] else False
 
         if cashout_ocorreu:
