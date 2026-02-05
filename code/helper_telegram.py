@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from pyrogram import Client
 
 # from PIL import Image, ImageOps
+from helper_db import resumo_telegram
 
 import logging
 
@@ -76,5 +77,9 @@ if __name__ == '__main__':
             if str(chat.type) == 'ChatType.CHANNEL':
                 print(f"{chat.title} | tipo: {chat.type} | username: {chat.id}")
 
-msg = '⚽️⏰ ONFIRE 🔥'
-enviar_no_telegram(chat_id=getenv('TELEGRAM_CHAT_ID'), msg=msg)
+try:
+    MSG = resumo_telegram()
+except:
+    MSG = '⚽️⏰ ONFIRE 🔥'
+
+enviar_no_telegram(chat_id=getenv('TELEGRAM_CHAT_ID'), msg=MSG)

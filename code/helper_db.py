@@ -1,11 +1,13 @@
 from sqlalchemy import create_engine
 import os
+import pandas as pd
 
 from sqlalchemy.orm import Session
 from sqlalchemy import Enum as SqlEnum
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, text
 from sqlalchemy.orm import declarative_base
 from enum import Enum
+
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -44,6 +46,33 @@ class TblUnderSmash(Base):
     def __repr__(self):
         return f"<User event_id={self.event_id} name={self.name}>"
 
+
+def resumo_telegram():
+    stmt = """SELECT 
+        strftime('%m/%Y', dt_insert) AS month,
+        sum(profit) as pl,
+        count(1) as entradas,
+        SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END) as greens,
+        SUM(CASE WHEN profit < 0 THEN 1 ELSE 0 END) as reds,
+        AVG(stake) as stake_media
+    FROM under_smash
+    GROUP BY strftime('%m/%Y', dt_insert)
+    ;"""
+    with engine.begin() as c:
+        result = c.execute(text(stmt)).fetchall()
+
+    df = pd.DataFrame(result)
+
+    df['pl'] = df['pl'].map(lambda x: f"R$ {round(x, 2)}" if x > 0 else f"-R$ {str(round(x, 2)).replace('-', '')}") # incluindo R$
+    df['stake_media'] = df['stake_media'].map(lambda x: f"R$ {round(x, 2)}" if x > 0 else f"-R$ {str(round(x, 2)).replace('-', '')}") # incluindo R$
+
+    resumo_mes = "\n".join(
+        f"**{row[0]}** | {row[5]} | **{row[1]}** ({row[3]}G, {row[4]}R)"
+        for row in df.itertuples(index=False)
+    )
+
+    MSG = f"**Daronco** \n\n<u>Resultado Mensal:</u> \n\n............| stake med. | PL\n{resumo_mes}"
+    return MSG
 
 if __name__ == '__main__':
     Base.metadata.create_all(engine)
