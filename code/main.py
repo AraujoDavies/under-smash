@@ -242,7 +242,7 @@ def monitorar_entrada():
             m.dt_entrada = datetime.now()
             m.stake = stake
             # telegram
-            MSG = f'**Garhwal FC v Indian Air Force** ⚽️⏰ R$ {stake}'
+            MSG = f'**{m.name}** ⚽️⏰ R$ {stake}'
             telegram_id = enviar_no_telegram(chat_id=os.getenv('TELEGRAM_CHAT_ID'), msg=MSG)
 
         logging.info('%s Status da aposta(order): %s', m, order_response)
@@ -408,9 +408,9 @@ def atualizar_pl():
 
         # telegram
         if pl > 0:
-            MSG = f'**Garhwal FC v Indian Air Force** 💰🤑 R$ {pl}'
+            MSG = f'**{match_db.name}** 💰🤑 R$ {pl}'
         else:
-            MSG = f'**Garhwal FC v Indian Air Force** 😐❌ -R$ {pl}'
+            MSG = f'**{match_db.name}** 😐❌ -R$ {pl}'
         telegram_id = enviar_no_telegram(chat_id=os.getenv('TELEGRAM_CHAT_ID'), msg=MSG)
 
 # analisa_jogos_em_andamento()
