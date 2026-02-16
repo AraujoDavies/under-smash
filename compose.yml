@@ -21,7 +21,7 @@ services:
       - APP_KEY=gBMF1zhAoNgJIbxw
       # set your db conn or use default
       - DATABASE_URI=sqlite:///app_v2.db
-      - STAKE_LUCRO=1
+      - STAKE=1
 
       # set telegram envs
       - TELEGRAM_CLIENT=${TELEGRAM_CLIENT}

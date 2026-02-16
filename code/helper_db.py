@@ -56,6 +56,7 @@ def resumo_telegram():
         SUM(CASE WHEN profit < 0 THEN 1 ELSE 0 END) as reds,
         AVG(stake) as stake_media
     FROM under_smash
+    WHERE stake > 0
     GROUP BY strftime('%m/%Y', dt_insert)
     ;"""
     with engine.begin() as c:

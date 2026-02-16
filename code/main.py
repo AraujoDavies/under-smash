@@ -10,11 +10,13 @@ from helper_db import engine, TblUnderSmash, session
 from sqlalchemy import select
 from helpers import *
 from helper_telegram import enviar_no_telegram
+from typing import List, Dict
+
 
 from dotenv import load_dotenv
 load_dotenv()
 
-LUCRO = os.getenv("STAKE_LUCRO")
+STAKE = os.getenv("STAKE")
 JA_FEZ_CASHOUT = []
 ignorar_events = [] # add o id dos eventos que sairam do padrão
 
@@ -230,19 +232,16 @@ def monitorar_entrada():
         market_id = m.market_id
         selection_id = m.selection_id
         odd = round(m.lay_under - 0.01, 2) # a odd do banco é a do lay, por isso subtrai 0.01 tick
-        # STAKE = RESP / odd -1
-        stake = str(int(int(LUCRO) / (odd -1))) + '.00' # faz-se o cálculo pq vamos entrar pra lucrar isso na realidade
-        stake = '1.00' # HACK
 
         order_response = str(place_order(
-            market_id=market_id, selection_id=selection_id, stake=stake, side="BACK", odd=str(odd)
+            market_id=market_id, selection_id=selection_id, stake=STAKE, side="BACK", odd=str(odd)
         ))
         if '<status>SUCCESS</status>' in order_response:
             m.betfair_response_entrada = order_response
             m.dt_entrada = datetime.now()
-            m.stake = stake
+            m.stake = STAKE
             # telegram
-            MSG = f'**{m.name}** ⚽️⏰ R$ {stake}'
+            MSG = f'**{m.name}** ⚽️⏰ R$ {STAKE}'
             telegram_id = enviar_no_telegram(chat_id=os.getenv('TELEGRAM_CHAT_ID'), msg=MSG)
 
         logging.info('%s Status da aposta(order): %s', m, order_response)
@@ -287,7 +286,7 @@ def monitorar_entrada():
         odd_ref = match_db.lay_under + 0.01
         if odd_lay > odd_ref : # só fecha e já era
             logging.info('%s: CASHOUT Forçado!', match_db)
-            saida = saida_cashout(match_db=match_db, mercado_saida="LAY", odd_back=odd_entrada_back, odd_lay=round(odd_lay + 0.01, 2))
+            saida = saida_cashout(match_db=match_db, odd_back=odd_back, odd_lay=round(odd_lay + 0.01, 2))
             logging.info("CASHOUT STATUS: %s", saida[1])
             if saida[0]: # TRUE/FALSE
                 match_db.betfair_response_saida = f'{saida[1]}<cash>CASH Forçado</cash>' if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
@@ -297,7 +296,7 @@ def monitorar_entrada():
         if odd_lay == odd_ref: # fecha se gap de 1 tick e peso do dinheiro do lay for 2.5 vezes maior q do back
             if round(gap,2) <= 0.01 and peso_dinheiro_lay > peso_dinheiro_back * 2.5:
                 logging.info('%s: CASHOUT na odd desejada: %s', match_db, odd_ref)
-                saida = saida_cashout(match_db=match_db, mercado_saida="LAY", odd_back=odd_entrada_back, odd_lay=odd_lay)
+                saida = saida_cashout(match_db=match_db, odd_back=odd_back, odd_lay=odd_lay)
                 logging.info("CASHOUT STATUS: %s", saida[1])
                 if saida[0]:
                     match_db.betfair_response_saida = f'{saida[1]}<cash>CASH ODD DESEJADA</cash>' if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
@@ -309,15 +308,65 @@ def monitorar_entrada():
     session.commit()
 
 
-def saida_cashout(match_db: TblUnderSmash, mercado_saida: str, odd_back: float, odd_lay: float) -> tuple:
+
+def calcular_cashout(apostas: List[Dict], odd_atual_back: float, odd_atual_lay: float):
+    """
+    apostas: lista de dicionários no formato:
+        {
+            "tipo": "back" ou "lay",
+            "stake": float,
+            "odd": float
+        }
+    odd_atual_back: odd em que você vai fechar se back
+    odd_atual_back: odd em que você vai fechar se lay
+    """
+
+    possivel_green = 0.0  # resultado se ganhar
+    possivel_red = 0.0  # resultado se perder
+
+    for a in apostas:
+        stake = a["stake"]
+        odd = a["odd"]
+        tipo = a["tipo"].lower()
+
+        if tipo == "back":
+            possivel_green += stake * (odd - 1)
+            possivel_red -= stake
+        elif tipo == "lay":
+            possivel_green -= stake * (odd - 1)
+            possivel_red += stake
+        else:
+            raise ValueError("Tipo de aposta inválido: use 'back' ou 'lay'")
+
+    if possivel_red < possivel_green:
+        mercado_saida = "lay"
+    else:
+        mercado_saida = 'back'
+
+    if mercado_saida == 'lay':
+        stake_hedge = (possivel_green - possivel_red) / odd_atual_lay
+    else: # BACK
+        stake_hedge = (possivel_red - possivel_green) / odd_atual_back
+
+    resultado_final = possivel_green - stake_hedge * (odd_atual_lay - 1) if mercado_saida == "lay" else possivel_green + stake_hedge * (odd_atual_back - 1)
+
+    return {
+        "mercado_saida_hedge": mercado_saida.upper(),
+        "stake_hedge": str(round(stake_hedge, 2)),
+        "resultado_apos_hedge": round(resultado_final, 2),
+        "resultado_se_ganhar_atual": round(possivel_green, 2),
+        "resultado_se_perder_atual": round(possivel_red, 2),
+    }
+
+
+def saida_cashout(match_db: TblUnderSmash, odd_back: float, odd_lay: float) -> tuple:
     """Faz saída em cashout
     
     Args:
 
         market_id (_str_): id do mercado para cash
-        mercado_saida (_str_): Qual mercado será usado para fechar LAY ou BACK
-        odd_back (_float_): odd que entrou ou q vai sair em back
-        odd_lay (_float_): odd que entrou ou q vai sair em lay
+        odd_back (_float_): odd back atual
+        odd_lay (_float_): odd lay atual
     
     Returns:
 
@@ -331,37 +380,37 @@ def saida_cashout(match_db: TblUnderSmash, mercado_saida: str, odd_back: float, 
     """
     payload = """{
         "jsonrpc": "2.0",
-        "method": "SportsAPING/v1.0/listMarketProfitAndLoss",
+        "method": "SportsAPING/v1.0/listCurrentOrders",
         "params": {
-            "marketIds": ["market_id"],
-            "includeSettledBets": true,
-            "includeBspBets": true,
-            "netOfCommission": true
+            "betStatus": "EXECUTABLE"
         },
         "id": 1
-    }""".replace('market_id', match_db.market_id)
+    }"""
     o = callAping(jsonrpc_req=payload)
-    df = pd.DataFrame(o['result'][0]['profitAndLosses'])
-    if float(df['ifWin'].min()) > 0: # green
-        return (False, 'CASHOUT JÁ OCORREU: Mercado encontra-se em green')
-    if float(df['ifWin'].min()) < 0 and float(df['ifWin'].max()) < 0: # red
-        return (False, 'CASHOUT JÁ OCORREU: Mercado encontra-se em red')
-    if float(df['ifWin'].min()) < 0 and float(df['ifWin'].max()) > 0: # está dentro       
-        if mercado_saida == 'LAY': # stake lay = odd back x stake back / odd lay
-            stake = float(df['ifWin'].min()) * -1
-            stake_lay = odd_back * stake / odd_lay # stake da saida em lay
-            stake_lay = round(stake_lay, 2)
-            logging.info('size: %s', stake_lay)
-            place_order_resp = place_order(market_id=match_db.market_id, selection_id=match_db.selection_id, stake=str(stake_lay), side="LAY", odd=str(odd_lay))
-            if 'MARKET_SUSPENDED' in place_order_resp:
-                return (False, "Mercado suspenso!")
-            if 'INVALID_ODDS' in place_order_resp:
-                return (False, f"ODD Inválida! @{odd_lay}")
-            return (True, place_order_resp)
-        elif mercado_saida == 'BACK':
-            return (False, "código para saida em BACK ainda não foi desenvolvivdo")
-        else:
-            return (False, "mercado_saida deve ser 'BACK' ou 'LAY'")
+    apostas = []
+    for a in o['result']['currentOrders']:
+        if str(a['selectionId']) == match_db.selection_id:
+            apostas.append({
+                'tipo': a['side'],
+                'stake': a['sizeMatched'],
+                'odd': a['averagePriceMatched'],
+            })
+
+    info = calcular_cashout(apostas, odd_back, odd_lay)
+
+    if info['resultado_se_ganhar_atual'] == info['resultado_se_perder_atual']:
+        return (True, "HEDGE SUCCESS!")
+    
+    logging.info('cashout: %s', info)
+
+    odd_saida = odd_back if info['mercado_saida_hedge'] == 'back' else odd_lay
+    place_order_resp = place_order(market_id=match_db.market_id, selection_id=match_db.selection_id, stake=info['stake_hedge'], side=info['mercado_saida_hedge'], odd=odd_saida)
+
+    if 'MARKET_SUSPENDED' in place_order_resp:
+        return (False, "Mercado suspenso!")
+    if 'INVALID_ODDS' in place_order_resp:
+        return (False, f"ODD Inválida! @{odd_saida}")
+    return (True, place_order_resp)
 
 
 def atualizar_pl():
@@ -377,7 +426,7 @@ def atualizar_pl():
             "params": {
                 "marketIds": [match_db.market_id],
                 "betStatus": "SETTLED",
-                "recordCount": 15
+                "recordCount": 200
             },
             "id": 1
         }
