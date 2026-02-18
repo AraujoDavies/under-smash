@@ -22,6 +22,7 @@ services:
       # set your db conn or use default
       - DATABASE_URI=sqlite:///app_v2.db
       - STAKE=1
+      - LIQUIDEZ_MINIMA=50000
 
       # set telegram envs
       - TELEGRAM_CLIENT=${TELEGRAM_CLIENT}
