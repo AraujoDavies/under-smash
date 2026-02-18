@@ -230,7 +230,7 @@ def monitorar_entrada():
     """
         faz a entrada e monitora se foi correspondido e quando deve fechar a posição
     """
-    stmt = select(TblUnderSmash).where(TblUnderSmash.betfair_response_entrada==None, TblUnderSmash.status=="IN_PLAY", TblUnderSmash.total_correspondido>=10000)
+    stmt = select(TblUnderSmash).where(TblUnderSmash.betfair_response_entrada==None, TblUnderSmash.status=="IN_PLAY", TblUnderSmash.total_correspondido>=100000)
     matchs_in_play = session.execute(stmt).scalars().all()
     
     # faça entradas pendentes...
