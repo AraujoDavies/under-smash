@@ -102,6 +102,9 @@ def analisa_jogos_em_andamento():
 
     # df
 
+    if df.empty:
+        return ''
+    
     # ignorar analise dos eventos que não estejam no intervalo
     df_to_ignore = df[df["inPlayMatchStatus"] != "FirstHalfEnd"].copy()
     for id in list(df_to_ignore['event_id']):
