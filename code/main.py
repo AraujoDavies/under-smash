@@ -473,6 +473,6 @@ schedule.every().second.do(monitorar_entrada)
 
 schedule.every(10).minutes.do(atualizar_pl)
 
-# while True:
-#     schedule.run_pending()
-#     time.sleep(1)
+while True:
+    schedule.run_pending()
+    time.sleep(1)
