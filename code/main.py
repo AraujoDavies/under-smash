@@ -60,18 +60,22 @@ def analisa_jogos_em_andamento():
         jogos_do_dia.append(jogo['event'])
 
     df_events = pd.DataFrame(jogos_do_dia)
-        
+    logging.info("Jogos em andamento: %s", len(df_events))
+
+    if df_events.empty:
+        return ''
+    
     df_events['minuto_aproximado'] = df_events['openDate'].map(lambda x: minutos_aproximados(x)) # Quantos minutos aprox o jogo tem
 
     df_events = df_events.sort_values('openDate')
     df_events.rename(columns={"id": "event_id"}, inplace=True)
 
     df_events = df_events[["event_id", "name", "minuto_aproximado"]]
-    logging.info("Jogos em andamento: %s", len(df_events))
     # df_events
 
     # Coletar status, placar, total de gols e tempo real de jogo
     df = df_events[df_events["minuto_aproximado"] > 45].copy()
+
     for index in df.index:
         event_id = df.loc[index]['event_id']
         try:
@@ -469,6 +473,6 @@ schedule.every().second.do(monitorar_entrada)
 
 schedule.every(10).minutes.do(atualizar_pl)
 
-while True:
-    schedule.run_pending()
-    time.sleep(1)
+# while True:
+#     schedule.run_pending()
+#     time.sleep(1)
