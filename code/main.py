@@ -318,14 +318,18 @@ def monitorar_entrada():
 
 def calcular_cashout(apostas: List[Dict], odd_atual_back: float, odd_atual_lay: float):
     """
-    apostas: lista de dicionários no formato:
-        {
-            "tipo": "back" ou "lay",
-            "stake": float,
-            "odd": float
-        }
-    odd_atual_back: odd em que você vai fechar se back
-    odd_atual_back: odd em que você vai fechar se lay
+    Faz o calculo do cashout
+    Parameters:
+        apostas: lista de dicionários no formato:
+            {
+                "tipo": "back" ou "lay",
+                "stake": float,
+                "odd": float
+            }
+        odd_atual_back: odd em que você vai fechar se back
+        odd_atual_back: odd em que você vai fechar se lay
+    Returns:
+        dict: infos do cash
     """
 
     possivel_green = 0.0  # resultado se ganhar
@@ -409,7 +413,7 @@ def saida_cashout(match_db: TblUnderSmash, odd_back: float, odd_lay: float) -> t
 
     info = calcular_cashout(apostas, odd_back, odd_lay)
 
-    if info['resultado_se_ganhar_atual'] == info['resultado_se_perder_atual']:
+    if info['resultado_se_ganhar_atual'] == info['resultado_se_perder_atual'] or float(info['stake_hedge']) < 0.10:
         return (True, "HEDGE SUCCESS!")
     
     logging.info('cashout: %s', info)
