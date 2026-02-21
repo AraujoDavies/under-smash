@@ -396,12 +396,16 @@ def saida_cashout(match_db: TblUnderSmash, odd_back: float, odd_lay: float) -> t
     o = callAping(jsonrpc_req=payload)
     apostas = []
     for a in o['result']['currentOrders']:
-        if str(a['selectionId']) == match_db.selection_id:
+        if str(a['marketId']) == match_db.market_id and str(a['selectionId']) == match_db.selection_id: # do banco ja vem como string
             apostas.append({
+                # 'market_id': a['marketId'],
+                # 'selection_id': a['selectionId'],
                 'tipo': a['side'],
                 'stake': a['sizeMatched'],
                 'odd': a['averagePriceMatched'],
             })
+
+    # df = pd.DataFrame(apostas)
 
     info = calcular_cashout(apostas, odd_back, odd_lay)
 
