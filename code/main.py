@@ -490,13 +490,13 @@ def atualizar_pl():
             MSG = f'**{match_db.name}** 😐❌ -R$ {pl}'
         telegram_id = enviar_no_telegram(chat_id=os.getenv('TELEGRAM_CHAT_ID'), msg=MSG)
 
-# analisa_jogos_em_andamento()
+analisa_jogos_em_andamento()
 schedule.every(7).minutes.do(analisa_jogos_em_andamento)
 schedule.every(30).seconds.do(atualizar_eventos_em_andamento)
 # schedule.every().second.do(monitorar_entrada)
 
 # schedule.every(10).minutes.do(atualizar_pl)
 
-# while True:
-#     schedule.run_pending()
-#     time.sleep(1)
+while True:
+    schedule.run_pending()
+    time.sleep(1)
