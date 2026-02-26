@@ -80,7 +80,5 @@ if __name__ == '__main__':
 # try:
 #     MSG = resumo_telegram()
 # except:
-#     MSG = '⚽️⏰ ONFIRE 🔥'
-
-
-# enviar_no_telegram(chat_id=getenv('TELEGRAM_CHAT_ID'), msg=MSG)
+MSG = 'Lay Over On!'
+enviar_no_telegram(chat_id='-1001262067125', msg=MSG)
