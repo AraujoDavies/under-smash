@@ -181,6 +181,20 @@ def analisa_jogos_em_andamento():
             insert = df_db.to_sql(name="under_smash", con=engine, if_exists="append", index=False)
             if insert == 1:
                 logging.info('Jogo adicionado no banco: %s', df_db.loc[df_db.first_valid_index(), 'name'])
+                # enviar sinal
+                if df_db.loc[df_db.first_valid_index(), 'total_correspondido'] > 50000:
+                    msg = """⚽️ <b>Lay Over</b> 😮‍💨
+
+[{event}]({link})
+
+» Entre a @{odd} | Feche a posição em Back @{odd_fecho} ⚠️
+"""
+                    link = 'https://www.betfair.bet.br/exchange/plus/football/market/' + df_db.loc[df_db.first_valid_index(), 'market_id']
+                    odd = str(round(df_db.loc[df_db.first_valid_index(), 'lay_under'], 2))
+                    odd_fecho = str(round(df_db.loc[df_db.first_valid_index(), 'lay_under'] + 0.1, 2))
+                    event = df_db.loc[df_db.first_valid_index(), 'name'].replace(' v ', f" {df_db.loc[df_db.first_valid_index(), 'placar']} ")
+                    msg = msg.replace('{odd}', odd).replace('{odd_fecho}', odd_fecho).replace('{event}', event).replace('{link}', link)
+                    enviar_no_telegram(chat_id=os.getenv('TELEGRAM_CHAT_ID'), msg=msg)
         except Exception as error:
             logging.error("INSERT: %s", str(error))
             pass
@@ -313,7 +327,6 @@ def monitorar_entrada():
             JA_FEZ_CASHOUT.append(match_db)
 
     session.commit()
-
 
 
 def calcular_cashout(apostas: List[Dict], odd_atual_back: float, odd_atual_lay: float):
@@ -480,10 +493,10 @@ def atualizar_pl():
 # analisa_jogos_em_andamento()
 schedule.every(7).minutes.do(analisa_jogos_em_andamento)
 schedule.every(30).seconds.do(atualizar_eventos_em_andamento)
-schedule.every().second.do(monitorar_entrada)
+# schedule.every().second.do(monitorar_entrada)
 
-schedule.every(10).minutes.do(atualizar_pl)
+# schedule.every(10).minutes.do(atualizar_pl)
 
-while True:
-    schedule.run_pending()
-    time.sleep(1)
+# while True:
+#     schedule.run_pending()
+#     time.sleep(1)

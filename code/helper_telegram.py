@@ -45,7 +45,7 @@ def enviar_no_telegram(chat_id=chat_id, msg='You need to set a message', img_pat
             logging.error(error)
     
     if send_without_img:
-        msg = app.send_message(chat_id, msg)
+        msg = app.send_message(chat_id, msg, disable_web_page_preview=True)
 
     id = msg.id
     app.stop()
@@ -77,9 +77,10 @@ if __name__ == '__main__':
             if str(chat.type) == 'ChatType.CHANNEL':
                 print(f"{chat.title} | tipo: {chat.type} | username: {chat.id}")
 
-try:
-    MSG = resumo_telegram()
-except:
-    MSG = '⚽️⏰ ONFIRE 🔥'
+# try:
+#     MSG = resumo_telegram()
+# except:
+#     MSG = '⚽️⏰ ONFIRE 🔥'
 
-enviar_no_telegram(chat_id=getenv('TELEGRAM_CHAT_ID'), msg=MSG)
+
+# enviar_no_telegram(chat_id=getenv('TELEGRAM_CHAT_ID'), msg=MSG)

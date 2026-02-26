@@ -7,6 +7,9 @@ run:
 db:
 	poetry run python code/helper_db.py
 
+gram:
+	poetry run python code/helper_telegram.py
+
 .PHONY: down
 down:
 	docker compose down
