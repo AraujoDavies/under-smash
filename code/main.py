@@ -182,7 +182,7 @@ def analisa_jogos_em_andamento():
             if insert == 1:
                 logging.info('Jogo adicionado no banco: %s', df_db.loc[df_db.first_valid_index(), 'name'])
                 # enviar sinal
-                if df_db.loc[df_db.first_valid_index(), 'total_correspondido'] > 50000:
+                if df_db.loc[df_db.first_valid_index(), 'total_correspondido'] > 500000:
                     msg = """⚽️ <b>Lay Over</b> 😮‍💨
 
 [{event}]({link})
