@@ -187,6 +187,8 @@ def analisa_jogos_em_andamento():
 
 [{event}]({link})
 
+Stake 10%
+
 » Entre a @{odd} | Feche a posição em Back @{odd_fecho} ⚠️
 """
                     link = 'https://www.betfair.bet.br/exchange/plus/football/market/' + df_db.loc[df_db.first_valid_index(), 'market_id']
