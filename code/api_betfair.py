@@ -4,6 +4,8 @@ import urllib
 import urllib.request
 import urllib.error
 import json
+
+from datetime import datetime
 from os import getenv
 
 from dotenv import load_dotenv
@@ -86,6 +88,8 @@ def place_order(market_id: str, selection_id: str, stake: str, side: str, odd: s
             odd (_str_): str no formato float, ex: "1.25"
             side(_str_): "BACK" ou "LAY"
     """
+    customer_ref = datetime.now().strftime("SMASH_%H_%M_%S_%d_%m_%Y")
+
     place_order_req = {
         "marketId": market_id,
         "instructions": [
@@ -101,7 +105,7 @@ def place_order(market_id: str, selection_id: str, stake: str, side: str, odd: s
                     }
             }
         ],
-        "customerRef": f"Daroncada{selection_id}{side}"
+        "customerRef": customer_ref
     }
 
     endPoint = 'https://api.betfair.bet.br/rest/v1.0/placeOrders/'

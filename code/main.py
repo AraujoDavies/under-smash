@@ -182,7 +182,7 @@ def analisa_jogos_em_andamento():
             if insert == 1:
                 logging.info('Jogo adicionado no banco: %s', df_db.loc[df_db.first_valid_index(), 'name'])
                 # enviar sinal
-                if df_db.loc[df_db.first_valid_index(), 'total_correspondido'] > 500000:
+                if df_db.loc[df_db.first_valid_index(), 'total_correspondido'] > float(os.getenv("LIQUIDEZ_MINIMA")):
                     msg = """⚽️ <b>Lay Over</b> 😮‍💨
 
 [{event}]({link})
@@ -242,91 +242,112 @@ def atualizar_eventos_em_andamento():
     session.commit()
 
 
-def monitorar_entrada():
+def monitorar_entradas():
     """
-        faz a entrada e monitora se foi correspondido e quando deve fechar a posição
+        faz a entrada e monitora se foi correspondido e quando deve fechar a posição. Entra em Lay ao over e fecha 10 ticks acima.
     """
-    stmt = select(TblUnderSmash).where(TblUnderSmash.betfair_response_entrada==None, TblUnderSmash.status=="IN_PLAY", TblUnderSmash.total_correspondido>=float(os.getenv("LIQUIDEZ_MINIMA")))
+    stmt = select(TblUnderSmash).where(TblUnderSmash.status=="IN_PLAY", TblUnderSmash.total_correspondido>=float(os.getenv("LIQUIDEZ_MINIMA")))
     matchs_in_play = session.execute(stmt).scalars().all()
     
-    # faça entradas pendentes...
+    # doing pending bets
     for m in matchs_in_play:
-        logging.info("Fazendo entrada: %s", m)
-        market_id = m.market_id
-        selection_id = m.selection_id
-        odd = round(m.lay_under - 0.01, 2) # a odd do banco é a do lay, por isso subtrai 0.01 tick
+        if m in JA_FEZ_CASHOUT: continue
+        # check if already have some bet matched.
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "SportsAPING/v1.0/listCurrentOrders",
+            "params": {
+                "betStatus": "EXECUTABLE",
+                "marketIds": [m.market_id]
+            },
+            "id": 1
+        }
+        payload = str(payload).replace("'", '"')
+        o = callAping(jsonrpc_req=payload)
 
-        order_response = str(place_order(
-            market_id=market_id, selection_id=selection_id, stake=STAKE, side="BACK", odd=str(odd)
-        ))
-        if '<status>SUCCESS</status>' in order_response:
-            m.betfair_response_entrada = order_response
-            m.dt_entrada = datetime.now()
-            m.stake = STAKE
-            # telegram
-            MSG = f'**{m.name}** ⚽️⏰ R$ {STAKE}'
-            telegram_id = enviar_no_telegram(chat_id=os.getenv('TELEGRAM_CHAT_ID'), msg=MSG)
+        apostas = []
+        for a in o['result']['currentOrders']:
+            if str(a['marketId']) == m.market_id and str(a['selectionId']) == m.selection_id: # do banco ja vem como string
+                apostas.append({
+                    # 'market_id': a['marketId'],
+                    # 'selection_id': a['selectionId'],
+                    'tipo': a['side'],
+                    'stake': a['sizeMatched'],
+                    'odd': a['averagePriceMatched'],
+                })
 
-        logging.info('%s Status da aposta(order): %s', m, order_response)
-
-    session.commit()
-
-    # monitore entradas em andamento para fechar
-    stmt = select(TblUnderSmash).where(TblUnderSmash.betfair_response_entrada!=None, TblUnderSmash.status=="IN_PLAY")
-    matchs_in_play = session.execute(stmt).scalars().all()
-
-    for match_db in matchs_in_play:
-        cashout_ocorreu = False
-        if match_db in JA_FEZ_CASHOUT:
-            # logging.info("%s ja fez cash - IGNORANDO MONITORAMENTO", match_db)
+        market_book = get_market_book(str(m.market_id))
+        market_status = market_book['result'][0]['status']
+        if market_status != 'OPEN': 
+            if market_status not in ['SUSPENDED']:
+                print(m.name, market_book)
             continue
 
-        # logging.info("Monitorando: %s", match_db)
-        if match_db.odd_max_saida > match_db.lay_under:
-            logging.info('%s: Está na hora de fazer cashout', match_db)
-        else:
-            continue
-
-        market_book = get_market_book(str(match_db.market_id))
-        if market_book['result'][0]['status'] == 'CLOSED': continue
+        # canceling pending bets
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "SportsAPING/v1.0/cancelOrders",
+            "params": {
+                "marketId": m.market_id
+            },
+            "id": 1
+        }
+        payload = str(payload).replace("'", '"')
+        o = callAping(jsonrpc_req=payload)
         try:
-            runners = market_book["result"][0]["runners"][1]["ex"]
-            odd_lay = runners["availableToLay"][0]["price"] 
-            odd_back = runners["availableToBack"][0]["price"]
-            peso_dinheiro_back = runners["availableToLay"][0]["size"] # pela ladder vc vê q é o inverso mesmo
-            peso_dinheiro_lay = runners["availableToBack"][0]["size"] # pela ladder vc vê q é o inverso mesmo
-            gap = odd_lay - odd_back
+            if o['result']['instructionReports']:
+                logging.info("Did cancel bet: %s", o)
         except:
-            logging.error("%s runners error!", match_db)
-            continue
+            logging.warning("Failed to cancel bet: %s", o)
 
-        # coleta odd de entrada
-        odd_entrada_back = match_db.betfair_response_entrada.split('price')[1]
-        for caracter in ['>', '<', '/']:
-            odd_entrada_back = odd_entrada_back.replace(caracter, '')
-        odd_entrada_back = float(odd_entrada_back)
 
-        odd_ref = match_db.lay_under + 0.01
-        if odd_lay > odd_ref : # só fecha e já era
-            logging.info('%s: CASHOUT Forçado!', match_db)
-            saida = saida_cashout(match_db=match_db, odd_back=odd_back, odd_lay=round(odd_lay + 0.01, 2))
-            logging.info("CASHOUT STATUS: %s", saida[1])
-            if saida[0]: # TRUE/FALSE
-                match_db.betfair_response_saida = f'{saida[1]}<cash>CASH Forçado</cash>' if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
-            cashout_ocorreu = True if 'CASHOUT JÁ OCORREU' in saida[1] else False
-                
+        # if have bet, check status and if it have to leave 
+        if bool(apostas):
+            odd_fecho = round(m.lay_under + 0.1, 2)
+            cash_info = calcular_cashout(apostas=apostas, odd_atual_back=odd_fecho, odd_atual_lay=odd_fecho)
+            if float(cash_info['stake_hedge']) < 0.1:
+                if len(apostas) > 1: # in case of two or more bets...
+                    logging.info('Ignoring this event: %s\nResult: %s', m.name, cash_info)
+                    JA_FEZ_CASHOUT.append(m)
+                continue # stake hedge == 0 nothing to do in this market
 
-        if odd_lay == odd_ref: # fecha se gap de 1 tick e peso do dinheiro do lay for 2.5 vezes maior q do back
-            if round(gap,2) <= 0.01 and peso_dinheiro_lay > peso_dinheiro_back * 2.5:
-                logging.info('%s: CASHOUT na odd desejada: %s', match_db, odd_ref)
-                saida = saida_cashout(match_db=match_db, odd_back=odd_back, odd_lay=odd_lay)
-                logging.info("CASHOUT STATUS: %s", saida[1])
-                if saida[0]:
-                    match_db.betfair_response_saida = f'{saida[1]}<cash>CASH ODD DESEJADA</cash>' if type(match_db.betfair_response_saida) != str else f'{match_db.betfair_response_saida} + {saida[1]}'
-                cashout_ocorreu = True if 'CASHOUT JÁ OCORREU' in saida[1] else False
+            try:
+                runners = market_book["result"][0]["runners"][1]["ex"]
+                odd_lay = runners["availableToLay"][0]["price"] 
+                odd_back = runners["availableToBack"][0]["price"]
+                peso_dinheiro_back = runners["availableToLay"][0]["size"] # pela ladder vc vê q é o inverso mesmo
+                peso_dinheiro_lay = runners["availableToBack"][0]["size"] # pela ladder vc vê q é o inverso mesmo
+                gap = odd_lay - odd_back
+            except:
+                logging.error("%s runners error: %s", m, market_book)
+                continue
 
-        if cashout_ocorreu:
-            JA_FEZ_CASHOUT.append(match_db)
+            if odd_back >= odd_fecho:
+                cash_info = calcular_cashout(apostas=apostas, odd_atual_back=odd_back, odd_atual_lay=odd_lay)
+                logging.info("Need to do cashout: %s", cash_info)
+                order_response = str(place_order(
+                    market_id=m.market_id, selection_id=m.selection_id, stake=cash_info['stake_hedge'], side="BACK", odd=str(odd_fecho)
+                ))
+                logging.info("did cashout, status: %s", order_response)
+
+
+        # if have no bet, do lay over
+        if bool(apostas) == False:           
+            market_id = m.market_id
+            selection_id = m.selection_id
+            odd = round(m.lay_under, 2)
+
+            order_response = str(place_order(
+                market_id=market_id, selection_id=selection_id, stake=STAKE, side="LAY", odd=str(odd)
+            ))
+            logging.info("did bet, status: %s", order_response)
+            if '<status>SUCCESS</status>' in order_response:
+                m.betfair_response_entrada = order_response
+                m.dt_entrada = datetime.now()
+                m.stake = STAKE
+                # telegram
+                MSG = f'LAY OVER: **{m.name}** ⚽️⏰ R$ {STAKE}'
+                telegram_id = enviar_no_telegram(chat_id=os.getenv('TELEGRAM_CHAT_ID_DEBUG'), msg=MSG)
 
     session.commit()
 
@@ -492,13 +513,28 @@ def atualizar_pl():
             MSG = f'**{match_db.name}** 😐❌ -R$ {pl}'
         telegram_id = enviar_no_telegram(chat_id=os.getenv('TELEGRAM_CHAT_ID'), msg=MSG)
 
+
 analisa_jogos_em_andamento()
 schedule.every(7).minutes.do(analisa_jogos_em_andamento)
 schedule.every(30).seconds.do(atualizar_eventos_em_andamento)
-# schedule.every().second.do(monitorar_entrada)
+schedule.every(10).seconds.do(monitorar_entradas)
 
 # schedule.every(10).minutes.do(atualizar_pl)
 
 while True:
     schedule.run_pending()
     time.sleep(1)
+
+
+# payload = {
+#     "jsonrpc": "2.0",
+#     "method": "SportsAPING/v1.0/listCompetitions",
+#     "params": {
+#         "filter": {
+#             "marketIds": ["1.256054306"]
+#         }
+#     },
+#     "id": 1
+# }
+# payload = str(payload).replace("'", '"')
+# o = callAping(jsonrpc_req=payload)
