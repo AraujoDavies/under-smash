@@ -305,7 +305,7 @@ def monitorar_entradas():
         if bool(apostas):
             odd_fecho = round(m.lay_under + 0.1, 2)
             cash_info = calcular_cashout(apostas=apostas, odd_atual_back=odd_fecho, odd_atual_lay=odd_fecho)
-            if float(cash_info['stake_hedge']) < 0.1:
+            if float(cash_info['stake_hedge']) < float(STAKE) * 0.2: # only if hedge < 20% from stake
                 if len(apostas) > 1: # in case of two or more bets...
                     logging.info('Ignoring this event: %s\nResult: %s', m.name, cash_info)
                     JA_FEZ_CASHOUT.append(m)
@@ -401,8 +401,8 @@ def calcular_cashout(apostas: List[Dict], odd_atual_back: float, odd_atual_lay: 
         "mercado_saida_hedge": mercado_saida.upper(),
         "stake_hedge": str(round(stake_hedge, 2)),
         "resultado_apos_hedge": round(resultado_final, 2),
-        "resultado_se_ganhar_atual": round(possivel_green, 2),
-        "resultado_se_perder_atual": round(possivel_red, 2),
+        "resultado_se_01": round(possivel_green, 2), # se mercado bater 1.01 (vencedor)
+        "resultado_se_1000": round(possivel_red, 2), # se mercado for a mil (perdedor)
     }
 
 
@@ -449,7 +449,7 @@ def saida_cashout(match_db: TblUnderSmash, odd_back: float, odd_lay: float) -> t
 
     info = calcular_cashout(apostas, odd_back, odd_lay)
 
-    if info['resultado_se_ganhar_atual'] == info['resultado_se_perder_atual'] or float(info['stake_hedge']) < 0.10:
+    if info['resultado_se_01'] == info['resultado_se_1000'] or float(info['stake_hedge']) < 0.10:
         return (True, "HEDGE SUCCESS!")
     
     logging.info('cashout: %s', info)
@@ -461,6 +461,7 @@ def saida_cashout(match_db: TblUnderSmash, odd_back: float, odd_lay: float) -> t
         return (False, "Mercado suspenso!")
     if 'INVALID_ODDS' in place_order_resp:
         return (False, f"ODD Inválida! @{odd_saida}")
+    enviar_no_telegram(chat_id=os.getenv('TELEGRAM_CHAT_ID_DEBUG'), msg=f"Fechou posição de {match_db.name} em {info['mercado_saida_hedge']} @{odd_saida} com stake {info['stake_hedge']}. Resultado após hedge: R$ {info['resultado_apos_hedge']}")
     return (True, place_order_resp)
 
 
